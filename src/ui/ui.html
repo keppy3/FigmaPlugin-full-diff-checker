@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>Full Diff Checker</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+    font-size: 12px;
+    color: var(--figma-color-text, #1e1e1e);
+    background: var(--figma-color-bg, #fff);
+  }
+  .panel { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .panel[hidden] { display: none; }
+
+  h1, h2, h3 { margin: 0; font-family: inherit; }
+  p { margin: 0; line-height: 1.6; color: var(--figma-color-text-secondary, #666); }
+  a { color: var(--figma-color-text-brand, #7b61ff); }
+  code { font-family: "SFMono-Regular", Consolas, monospace; background: var(--figma-color-bg-secondary, #f4f4f4); padding: 1px 4px; border-radius: 3px; }
+
+  label.field-label { font-weight: 600; font-size: 11px; color: var(--figma-color-text-secondary, #666); display: block; margin-bottom: 4px; }
+  input[type="text"], select {
+    width: 100%; font-family: inherit; font-size: 12px; color: var(--figma-color-text, #1e1e1e);
+    background: var(--figma-color-bg-secondary, #f4f4f4); border: 1px solid var(--figma-color-border, #e6e6e6);
+    border-radius: 6px; padding: 7px 8px; outline: none;
+  }
+  input[type="text"]:focus, select:focus { border-color: var(--figma-color-border-brand, #7b61ff); }
+
+  .btn {
+    appearance: none; border: none; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 12px;
+    padding: 8px 14px; border-radius: 6px; background: var(--figma-color-bg-brand, #7b61ff); color: var(--figma-color-text-onbrand, #fff);
+  }
+  .btn.secondary { background: var(--figma-color-bg-secondary, #f4f4f4); color: var(--figma-color-text, #1e1e1e); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-row { display: flex; gap: 8px; }
+  .link-btn { background: none; border: none; color: var(--figma-color-text-brand, #7b61ff); font-size: 11px; font-weight: 600; cursor: pointer; padding: 0; }
+
+  /* ---- gate screen ---- */
+  .gate { text-align: center; align-items: center; padding-top: 24px; }
+  .gate-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--figma-color-bg-brand, #7b61ff); }
+  .gate input { text-align: left; }
+  .gate .btn { width: 100%; }
+  .gate-status { font-size: 11px; color: var(--figma-color-text-secondary, #666); min-height: 14px; }
+
+  /* ---- setup screen ---- */
+  .auth-status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--figma-color-text-secondary, #666);
+    background: var(--figma-color-bg-secondary, #f4f4f4); border-radius: 6px; padding: 6px 8px; }
+  .auth-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--figma-color-icon-success, #14ae5c); }
+  .auth-status .link-btn { margin-left: auto; }
+
+  fieldset { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 8px; padding: 10px; margin: 0; }
+  legend { font-weight: 600; font-size: 11px; color: var(--figma-color-text-secondary, #666); padding: 0 4px; }
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; border: 1px solid var(--figma-color-border, #e6e6e6);
+    border-radius: 100px; padding: 4px 9px; cursor: pointer; user-select: none; }
+  .chip input { margin: 0; }
+  .flag { font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 4px; }
+  .flag.before { background: var(--figma-color-bg-danger-tertiary, #fde); color: var(--figma-color-text-danger, #c02b32); }
+  .flag.after { background: var(--figma-color-bg-brand-tertiary, #eee6ff); color: var(--figma-color-text-brand, #7b61ff); }
+
+  .seg { display: inline-flex; background: var(--figma-color-bg-secondary, #f4f4f4); border-radius: 6px; padding: 2px; }
+  .seg button { appearance: none; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 600;
+    padding: 5px 10px; border-radius: 4px; color: var(--figma-color-text-secondary, #666); }
+  .seg button.active { background: var(--figma-color-bg, #fff); color: var(--figma-color-text, #1e1e1e); }
+
+  .hint { font-size: 10.5px; color: var(--figma-color-text-tertiary, #999); line-height: 1.6; }
+  .scan-bar { display: flex; flex-direction: column; gap: 8px; }
+
+  /* ---- log screen ---- */
+  #log-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+  .log-item { font-size: 11px; font-family: "SFMono-Regular", Consolas, monospace; color: var(--figma-color-text-secondary, #666);
+    background: var(--figma-color-bg-secondary, #f4f4f4); border-radius: 6px; padding: 7px 9px; }
+</style>
+</head>
+<body>
+
+  <!-- ===== 0. Gate (first run only: PAT input) ===== -->
+  <section class="panel gate" id="panel-gate">
+    <div class="gate-icon"></div>
+    <h2>Full Diff Checkerへようこそ</h2>
+    <p>Before/Afterの比較にはFigma REST APIの利用が必要です。個人アクセストークンを入力して接続してください。</p>
+    <input type="text" id="gate-token-input" placeholder="figd_xxxxxxxxxxxxxxxxxxxxxxxx" />
+    <a href="https://www.figma.com/developers/api#access-tokens" target="_blank" rel="noopener">トークンの発行方法はこちら →</a>
+    <button class="btn" id="gate-connect-btn">接続して次へ →</button>
+    <div class="gate-status" id="gate-status"></div>
+    <p class="hint">接続確認後はこの端末に保存され、次回以降このステップは表示されません。</p>
+  </section>
+
+  <!-- ===== 1. Setup ===== -->
+  <section class="panel" id="panel-setup" hidden>
+    <div class="auth-status">
+      <span class="dot"></span> 接続中
+      <button class="link-btn" id="change-token-link">トークンを変更</button>
+    </div>
+
+    <div>
+      <label class="field-label">Before 比較元 URL</label>
+      <input type="text" id="before-url-input" placeholder="https://www.figma.com/design/..." />
+      <input type="text" id="before-version-input" placeholder="バージョンID（任意・空欄なら最新）" style="margin-top:6px;" />
+    </div>
+    <div>
+      <label class="field-label">After 比較先 URL</label>
+      <input type="text" id="after-url-input" placeholder="https://www.figma.com/design/..." />
+      <input type="text" id="after-version-input" placeholder="バージョンID（任意・空欄なら最新）" style="margin-top:6px;" />
+      <p class="hint">バージョンIDはFigmaのVersion Historyパネルから確認できます。現在の状態と比較する場合は空欄のままにしてください。</p>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn secondary" id="fetch-pages-btn">ページ一覧を取得</button>
+    </div>
+    <fieldset id="exclude-pages-fieldset" hidden>
+      <legend>対象外ページ</legend>
+      <div class="chip-row" id="exclude-pages-list"></div>
+      <p class="hint">片方のファイルにしかないページには目印が付きます。初期状態では除外されません。</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>属性を選択（複数選択可）</legend>
+      <div class="chip-row">
+        <label class="chip"><input type="checkbox" class="scope-attribute" value="MAIN_COMPONENT" checked />メインコンポーネント</label>
+        <label class="chip"><input type="checkbox" class="scope-attribute" value="INSTANCE_COMPONENT" />インスタンスを含むコンポーネント</label>
+        <label class="chip"><input type="checkbox" class="scope-attribute" value="SECTION" />セクション</label>
+        <label class="chip"><input type="checkbox" class="scope-attribute" value="FRAME" />フレーム</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>階層を選択（ページ直下 = 第1階層）</legend>
+      <div class="chip-row">
+        <label class="chip"><input type="radio" name="depth" value="ALL" checked />すべての階層</label>
+        <label class="chip">
+          <input type="radio" name="depth" value="N" />第
+          <span id="depth-stepper-value">1</span>階層のみ
+        </label>
+        <button class="link-btn" id="depth-minus" type="button">−</button>
+        <button class="link-btn" id="depth-plus" type="button">+</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>レンダリング解像度（PNG固定）</legend>
+      <div class="seg" id="scale-seg">
+        <button data-scale="0.25" type="button">0.25x</button>
+        <button data-scale="0.5" class="active" type="button">0.5x</button>
+        <button data-scale="1" type="button">1x</button>
+      </div>
+      <p class="hint">しきい値 0.10%（固定）で判定します。</p>
+    </fieldset>
+
+    <div class="scan-bar">
+      <p class="hint">完了後はこのFigmaファイル内に新規ページとしてレポートを生成します。</p>
+      <button class="btn" id="scan-start-btn">スキャン開始 →</button>
+    </div>
+  </section>
+
+  <!-- ===== 2. Execution log ===== -->
+  <section class="panel" id="panel-log" hidden>
+    <h2>実行ログ</h2>
+    <div id="log-list"></div>
+    <button class="btn" id="back-to-setup-btn">設定に戻る</button>
+  </section>
+
+<!-- BUILD:SCRIPT -->
+</body>
+</html>
