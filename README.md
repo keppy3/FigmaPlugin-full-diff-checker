@@ -6,22 +6,24 @@ Before/After（変更前後・ブランチ間・バージョン間）の見た�
 
 > **状態**: v1実装（未検証）。実際のFigma環境でまだ動作確認していません。下記「テスト方法」に沿って動作確認し、issueとして問題を記録してください。
 
-## セットアップ
+`dist/` はビルド成果物だが、**このリポジトリでは意図的にコミットしている**（`.gitignore`参照）。Node/npmが入っていない環境でも、クローンやZIPダウンロードした直後にビルドなしでそのままFigmaに読み込めるようにするため。`src/`を変更したら`npm run build`を実行し、更新された`dist/`も一緒にコミットすること。
 
-```bash
-npm install
-npm run build   # dist/code.js, dist/ui.html を生成
-npm run watch   # ファイル変更を監視して自動ビルド
-npm run typecheck
-```
+## テスト方法（Figmaへの読み込み・ビルド不要）
 
-## テスト方法（Figmaへの読み込み）
-
-1. `npm run build` を実行し `dist/` を生成する
+1. このリポジトリをクローン（またはZIPダウンロードして展開）
 2. Figmaデスクトップアプリで任意のファイルを開く
 3. 右クリック → Plugins → Development → Import plugin from manifest…
 4. このリポジトリの `manifest.json` を選択
 5. Plugins → Development → Full Diff Checker で起動
+
+## 開発（src/を変更する場合）
+
+```bash
+npm install
+npm run build   # dist/code.js, dist/ui.html を再生成 -- 変更後は必ずコミットすること
+npm run watch   # ファイル変更を監視して自動ビルド
+npm run typecheck
+```
 
 初回起動時はPersonal Access Token（[発行方法](https://www.figma.com/developers/api#access-tokens)、スコープ `file_content:read` `file_versions:read`）の入力を求められる。以降は `figma.clientStorage` に保存され、次回起動時はスキップされる。
 

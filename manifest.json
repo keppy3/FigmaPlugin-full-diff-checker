@@ -1,6 +1,6 @@
 {
   "name": "Full Diff Checker",
-  "id": "0",
+  "id": "local-dev-full-diff-checker",
   "api": "1.0.0",
   "main": "dist/code.js",
   "ui": "dist/ui.html",

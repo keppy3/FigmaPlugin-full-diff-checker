@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>Full Diff Checker</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+    font-size: 12px;
+    color: var(--figma-color-text, #1e1e1e);
+    background: var(--figma-color-bg, #fff);
+  }
+  .panel { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .panel[hidden] { display: none; }
+
+  h1, h2, h3 { margin: 0; font-family: inherit; }
+  p { margin: 0; line-height: 1.6; color: var(--figma-color-text-secondary, #666); }
+  a { color: var(--figma-color-text-brand, #7b61ff); }
+  code { font-family: "SFMono-Regular", Consolas, monospace; background: var(--figma-color-bg-secondary, #f4f4f4); padding: 1px 4px; border-radius: 3px; }
+
+  label.field-label { font-weight: 600; font-size: 11px; color: var(--figma-color-text-secondary, #666); display: block; margin-bottom: 4px; }
+  input[type="text"], select {
+    width: 100%; font-family: inherit; font-size: 12px; color: var(--figma-color-text, #1e1e1e);
+    background: var(--figma-color-bg-secondary, #f4f4f4); border: 1px solid var(--figma-color-border, #e6e6e6);
+    border-radius: 6px; padding: 7px 8px; outline: none;
+  }
+  input[type="text"]:focus, select:focus { border-color: var(--figma-color-border-brand, #7b61ff); }
+
+  .btn {
+    appearance: none; border: none; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 12px;
+    padding: 8px 14px; border-radius: 6px; background: var(--figma-color-bg-brand, #7b61ff); color: var(--figma-color-text-onbrand, #fff);
+  }
+  .btn.secondary { background: var(--figma-color-bg-secondary, #f4f4f4); color: var(--figma-color-text, #1e1e1e); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-row { display: flex; gap: 8px; }
+  .link-btn { background: none; border: none; color: var(--figma-color-text-brand, #7b61ff); font-size: 11px; font-weight: 600; cursor: pointer; padding: 0; }
+
+  /* ---- gate screen ---- */
+  .gate { text-align: center; align-items: center; padding-top: 24px; }
+  .gate-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--figma-color-bg-brand, #7b61ff); }
+  .gate input { text-align: left; }
+  .gate .btn { width: 100%; }
+  .gate-status { font-size: 11px; color: var(--figma-color-text-secondary, #666); min-height: 14px; }
+
+  /* ---- setup screen ---- */
+  .auth-status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--figma-color-text-secondary, #666);
+    background: var(--figma-color-bg-secondary, #f4f4f4); border-radius: 6px; padding: 6px 8px; }
+  .auth-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--figma-color-icon-success, #14ae5c); }
+  .auth-status .link-btn { margin-left: auto; }
+
+  fieldset { border: 1px solid var(--figma-color-border, #e6e6e6); border-radius: 8px; padding: 10px; margin: 0; }
+  legend { font-weight: 600; font-size: 11px; color: var(--figma-color-text-secondary, #666); padding: 0 4px; }
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; border: 1px solid var(--figma-color-border, #e6e6e6);
+    border-radius: 100px; padding: 4px 9px; cursor: pointer; user-select: none; }
+  .chip input { margin: 0; }
+  .flag { font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 4px; }
+  .flag.before { background: var(--figma-color-bg-danger-tertiary, #fde); color: var(--figma-color-text-danger, #c02b32); }
+  .flag.after { background: var(--figma-color-bg-brand-tertiary, #eee6ff); color: var(--figma-color-text-brand, #7b61ff); }
+
+  .seg { display: inline-flex; background: var(--figma-color-bg-secondary, #f4f4f4); border-radius: 6px; padding: 2px; }
+  .seg button { appearance: none; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 600;
+    padding: 5px 10px; border-radius: 4px; color: var(--figma-color-text-secondary, #666); }
+  .seg button.active { background: var(--figma-color-bg, #fff); color: var(--figma-color-text, #1e1e1e); }
+
+  .hint { font-size: 10.5px; color: var(--figma-color-text-tertiary, #999); line-height: 1.6; }
+  .scan-bar { display: flex; flex-direction: column; gap: 8px; }
+
+  /* ---- log screen ---- */
+  #log-list { display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+  .log-item { font-size: 11px; font-family: "SFMono-Regular", Consolas, monospace; color: var(--figma-color-text-secondary, #666);
+    background: var(--figma-color-bg-secondary, #f4f4f4); border-radius: 6px; padding: 7px 9px; }
+</style>
+</head>
+<body>
+
+  <!-- ===== 0. Gate (first run only: PAT input) ===== -->
+  <section class="panel gate" id="panel-gate">
+    <div class="gate-icon"></div>
+    <h2>Full Diff Checkerへようこそ</h2>
+    <p>Before/Afterの比較にはFigma REST APIの利用が必要です。個人アクセストークンを入力して接続してください。</p>
+    <input type="text" id="gate-token-input" placeholder="figd_xxxxxxxxxxxxxxxxxxxxxxxx" />
+    <a href="https://www.figma.com/developers/api#access-tokens" target="_blank" rel="noopener">トークンの発行方法はこちら →</a>
+    <button class="btn" id="gate-connect-btn">接続して次へ →</button>
+    <div class="gate-status" id="gate-status"></div>
+    <p class="hint">接続確認後はこの端末に保存され、次回以降このステップは表示されません。</p>
+  </section>
+
+  <!-- ===== 1. Setup ===== -->
+  <section class="panel" id="panel-setup" hidden>
+    <div class="auth-status">
+      <span class="dot"></span> 接続中
+      <button class="link-btn" id="change-token-link">トークンを変更</button>
+    </div>
+
+    <div>
+      <label class="field-label">Before 比較元 URL</label>
+      <input type="text" id="before-url-input" placeholder="https://www.figma.com/design/..." />
+      <input type="text" id="before-version-input" placeholder="バージョンID（任意・空欄なら最新）" style="margin-top:6px;" />
+    </div>
+    <div>
+      <label class="field-label">After 比較先 URL</label>
+      <input type="text" id="after-url-input" placeholder="https://www.figma.com/design/..." />
+      <input type="text" id="after-version-input" placeholder="バージョンID（任意・空欄なら最新）" style="margin-top:6px;" />
+      <p class="hint">バージョンIDはFigmaのVersion Historyパネルから確認できます。現在の状態と比較する場合は空欄のままにしてください。</p>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn secondary" id="fetch-pages-btn">ページ一覧を取得</button>
+    </div>
+    <fieldset id="exclude-pages-fieldset" hidden>
+      <legend>対象外ページ</legend>
+      <div class="chip-row" id="exclude-pages-list"></div>
+      <p class="hint">片方のファイルにしかないページには目印が付きます。初期状態では除外されません。</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>属性を選択（複数選択可）</legend>
+      <div class="chip-row">
+        <label class="chip"><input type="checkbox" class="scope-attribute" value="MAIN_COMPONENT" checked />メインコンポーネント</label>
+        <label class="chip"><input type="checkbox" class="scope-attribute" value="INSTANCE_COMPONENT" />インスタンスを含むコンポーネント</label>
+        <label class="chip"><input type="checkbox" class="scope-attribute" value="SECTION" />セクション</label>
+        <label class="chip"><input type="checkbox" class="scope-attribute" value="FRAME" />フレーム</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>階層を選択（ページ直下 = 第1階層）</legend>
+      <div class="chip-row">
+        <label class="chip"><input type="radio" name="depth" value="ALL" checked />すべての階層</label>
+        <label class="chip">
+          <input type="radio" name="depth" value="N" />第
+          <span id="depth-stepper-value">1</span>階層のみ
+        </label>
+        <button class="link-btn" id="depth-minus" type="button">−</button>
+        <button class="link-btn" id="depth-plus" type="button">+</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>レンダリング解像度（PNG固定）</legend>
+      <div class="seg" id="scale-seg">
+        <button data-scale="0.25" type="button">0.25x</button>
+        <button data-scale="0.5" class="active" type="button">0.5x</button>
+        <button data-scale="1" type="button">1x</button>
+      </div>
+      <p class="hint">しきい値 0.10%（固定）で判定します。</p>
+    </fieldset>
+
+    <div class="scan-bar">
+      <p class="hint">完了後はこのFigmaファイル内に新規ページとしてレポートを生成します。</p>
+      <button class="btn" id="scan-start-btn">スキャン開始 →</button>
+    </div>
+  </section>
+
+  <!-- ===== 2. Execution log ===== -->
+  <section class="panel" id="panel-log" hidden>
+    <h2>実行ログ</h2>
+    <div id="log-list"></div>
+    <button class="btn" id="back-to-setup-btn">設定に戻る</button>
+  </section>
+
+<script>
+"use strict";
+(() => {
+  // src/ui/rateLimiter.ts
+  var MIN_INTERVAL_MS = 4500;
+  var lastCallAt = 0;
+  async function throttleTier1() {
+    const wait = lastCallAt + MIN_INTERVAL_MS - Date.now();
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    lastCallAt = Date.now();
+  }
+
+  // src/ui/figmaApi.ts
+  var API_BASE = "https://api.figma.com";
+  var IMAGE_BATCH_SIZE = 40;
+  function parseFigmaUrl(url) {
+    const match = url.match(/figma\.com\/(?:design|file|proto)\/([a-zA-Z0-9]+)/);
+    if (!match) {
+      throw new Error(`Figma\u306E\u30D5\u30A1\u30A4\u30EBURL\u3068\u3057\u3066\u89E3\u91C8\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F: ${url}`);
+    }
+    return { fileKey: match[1] };
+  }
+  function authHeaders(token) {
+    return { "X-Figma-Token": token };
+  }
+  async function apiFetch(token, path, params) {
+    const url = new URL(`${API_BASE}${path}`);
+    for (const [key, value] of Object.entries(params != null ? params : {})) {
+      if (value !== void 0) url.searchParams.set(key, value);
+    }
+    await throttleTier1();
+    const res = await fetch(url.toString(), { headers: authHeaders(token) });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`Figma API ${res.status}: ${path}${body ? ` \u2014 ${body.slice(0, 200)}` : ""}`);
+    }
+    return res.json();
+  }
+  async function validateToken(token) {
+    const data = await apiFetch(token, "/v1/me");
+    return { email: data.email, handle: data.handle };
+  }
+  async function fetchFileTree(token, fileKey, versionId) {
+    var _a, _b;
+    const data = await apiFetch(token, `/v1/files/${fileKey}`, { version: versionId });
+    const pages = ((_b = (_a = data.document) == null ? void 0 : _a.children) != null ? _b : []).map(toSummary);
+    return { fileName: data.name, pages };
+  }
+  function toSummary(node) {
+    const isComponentLike = node.type === "COMPONENT" || node.type === "COMPONENT_SET";
+    return {
+      id: node.id,
+      name: node.name,
+      type: node.type,
+      componentKey: isComponentLike ? node.key : void 0,
+      children: Array.isArray(node.children) ? node.children.map(toSummary) : void 0
+    };
+  }
+  async function fetchImages(token, fileKey, nodeIds, scale, versionId, onProgress) {
+    const result = /* @__PURE__ */ new Map();
+    for (let i = 0; i < nodeIds.length; i += IMAGE_BATCH_SIZE) {
+      const batch = nodeIds.slice(i, i + IMAGE_BATCH_SIZE);
+      const data = await apiFetch(token, `/v1/images/${fileKey}`, {
+        ids: batch.join(","),
+        format: "png",
+        scale: String(scale),
+        version: versionId
+      });
+      if (data.err) {
+        throw new Error(`\u753B\u50CF\u306E\u66F8\u304D\u51FA\u3057\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${data.err}`);
+      }
+      await Promise.all(
+        batch.map(async (id) => {
+          var _a;
+          const imageUrl = (_a = data.images) == null ? void 0 : _a[id];
+          if (!imageUrl) return;
+          const imgRes = await fetch(imageUrl);
+          const bytes = new Uint8Array(await imgRes.arrayBuffer());
+          result.set(id, { bytes });
+        })
+      );
+      onProgress == null ? void 0 : onProgress(Math.min(i + IMAGE_BATCH_SIZE, nodeIds.length), nodeIds.length);
+    }
+    return result;
+  }
+
+  // src/ui/scope.ts
+  var SIMPLE_ATTRIBUTE_TYPES = {
+    MAIN_COMPONENT: ["COMPONENT", "COMPONENT_SET"],
+    SECTION: ["SECTION"],
+    FRAME: ["FRAME"]
+  };
+  var ROOT_DEPTH = 1;
+  function resolveScopeTargets(pages, scope) {
+    var _a;
+    const wantedSimpleTypes = new Set(
+      scope.attributes.filter((attribute) => attribute !== "INSTANCE_COMPONENT").flatMap((attribute) => SIMPLE_ATTRIBUTE_TYPES[attribute])
+    );
+    const wantInstanceContainers = scope.attributes.includes("INSTANCE_COMPONENT");
+    const targets = [];
+    for (const page of pages) {
+      if (scope.excludedPageNames.includes(page.name)) continue;
+      walk((_a = page.children) != null ? _a : [], [page.name], ROOT_DEPTH, page.name);
+    }
+    function walk(nodes, pathParts, depth, pageName) {
+      var _a2;
+      for (const node of nodes) {
+        const depthMatches = scope.depth === "ALL" || depth === scope.depth;
+        const isComponentLike = node.type === "COMPONENT" || node.type === "COMPONENT_SET";
+        const matches = depthMatches && (wantedSimpleTypes.has(node.type) || wantInstanceContainers && isComponentLike && containsInstance(node));
+        if (matches) {
+          const path = pathParts.join(" / ");
+          targets.push({
+            nodeId: node.id,
+            matchKey: (_a2 = node.componentKey) != null ? _a2 : `${path} / ${node.name}`,
+            name: node.name,
+            path,
+            pageName
+          });
+        }
+        if (node.children) {
+          walk(node.children, [...pathParts, node.name], depth + 1, pageName);
+        }
+      }
+    }
+    return targets;
+  }
+  function containsInstance(node) {
+    if (!node.children) return false;
+    return node.children.some((child) => child.type === "INSTANCE" || containsInstance(child));
+  }
+
+  // src/ui/match.ts
+  function matchTargets(before, after) {
+    const afterByKey = new Map(after.map((target) => [target.matchKey, target]));
+    const consumedAfterKeys = /* @__PURE__ */ new Set();
+    const pairs = [];
+    for (const b of before) {
+      const a = afterByKey.get(b.matchKey);
+      if (a) {
+        consumedAfterKeys.add(b.matchKey);
+        pairs.push({ before: b, after: a });
+      } else {
+        pairs.push({ before: b, after: null });
+      }
+    }
+    for (const a of after) {
+      if (!consumedAfterKeys.has(a.matchKey)) {
+        pairs.push({ before: null, after: a });
+      }
+    }
+    return pairs;
+  }
+
+  // src/ui/diff.ts
+  var NOISE_EPSILON = 6;
+  async function computeDiffPercent(beforeBytes, afterBytes) {
+    const [beforeImg, afterImg] = await Promise.all([toImage(beforeBytes), toImage(afterBytes)]);
+    const width = Math.max(beforeImg.width, afterImg.width);
+    const height = Math.max(beforeImg.height, afterImg.height);
+    if (width === 0 || height === 0) return 0;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas 2d context \u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    ctx.drawImage(beforeImg, 0, 0);
+    ctx.globalCompositeOperation = "difference";
+    ctx.drawImage(afterImg, 0, 0);
+    const { data } = ctx.getImageData(0, 0, width, height);
+    let diffPixels = 0;
+    const totalPixels = width * height;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] > NOISE_EPSILON || data[i + 1] > NOISE_EPSILON || data[i + 2] > NOISE_EPSILON) {
+        diffPixels++;
+      }
+    }
+    return diffPixels / totalPixels * 100;
+  }
+  function toImage(bytes) {
+    return new Promise((resolve, reject) => {
+      const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      const url = URL.createObjectURL(new Blob([arrayBuffer], { type: "image/png" }));
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(img);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("\u753B\u50CF\u306E\u30C7\u30B3\u30FC\u30C9\u306B\u5931\u6557\u3057\u307E\u3057\u305F"));
+      };
+      img.src = url;
+    });
+  }
+
+  // src/ui/uiConfig.ts
+  var DIFF_THRESHOLD_PERCENT = 0.1;
+  var DEFAULT_SCALE = 0.5;
+
+  // src/ui/ui.ts
+  function post(message) {
+    parent.postMessage({ pluginMessage: message }, "*");
+  }
+  function $(id) {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`#${id} \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
+    return el;
+  }
+  function showScreen(name) {
+    $("panel-gate").hidden = name !== "gate";
+    $("panel-setup").hidden = name !== "setup";
+    $("panel-log").hidden = name !== "log";
+  }
+  function appendLog(text) {
+    const log = $("log-list");
+    const item = document.createElement("div");
+    item.className = "log-item";
+    item.textContent = text;
+    log.appendChild(item);
+    log.scrollTop = log.scrollHeight;
+  }
+  var currentToken = null;
+  var selectedScale = DEFAULT_SCALE;
+  var excludedPageNames = [];
+  var treeCache = null;
+  window.onmessage = (event) => {
+    const message = event.data.pluginMessage;
+    if (!message) return;
+    handleMainMessage(message);
+  };
+  function handleMainMessage(message) {
+    switch (message.type) {
+      case "token-loaded":
+        currentToken = message.token;
+        showScreen(message.token ? "setup" : "gate");
+        break;
+      case "report-progress":
+        appendLog(message.message);
+        break;
+      case "report-done":
+        appendLog(`\u2713 \u65B0\u898F\u30DA\u30FC\u30B8\u300C${message.pageName}\u300D\u3092\u4F5C\u6210\u3057\u307E\u3057\u305F`);
+        break;
+      case "report-error":
+        appendLog(`\u2715 \u30A8\u30E9\u30FC: ${message.message}`);
+        break;
+    }
+  }
+  post({ type: "ui-ready" });
+  $("gate-connect-btn").addEventListener("click", async () => {
+    const input = $("gate-token-input");
+    const status = $("gate-status");
+    const token = input.value.trim();
+    if (!token) return;
+    status.textContent = "\u63A5\u7D9A\u3092\u78BA\u8A8D\u3057\u3066\u3044\u307E\u3059\u2026";
+    try {
+      const me = await validateToken(token);
+      currentToken = token;
+      post({ type: "save-token", token });
+      status.textContent = `\u63A5\u7D9A\u3057\u307E\u3057\u305F\uFF08${me.handle}\uFF09`;
+      showScreen("setup");
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "\u30C8\u30FC\u30AF\u30F3\u3092\u78BA\u8A8D\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F";
+    }
+  });
+  $("change-token-link").addEventListener("click", () => {
+    post({ type: "clear-token" });
+    currentToken = null;
+    treeCache = null;
+    $("gate-token-input").value = "";
+    $("gate-status").textContent = "";
+    showScreen("gate");
+  });
+  var depthValue = 1;
+  function selectDepthN() {
+    const radio = document.querySelector('input[name="depth"][value="N"]');
+    if (radio) radio.checked = true;
+  }
+  $("depth-minus").addEventListener("click", () => {
+    depthValue = Math.max(1, depthValue - 1);
+    $("depth-stepper-value").textContent = String(depthValue);
+    selectDepthN();
+  });
+  $("depth-plus").addEventListener("click", () => {
+    depthValue = depthValue + 1;
+    $("depth-stepper-value").textContent = String(depthValue);
+    selectDepthN();
+  });
+  $("scale-seg").addEventListener("click", (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    document.querySelectorAll("#scale-seg button").forEach((b) => b.classList.remove("active"));
+    button.classList.add("active");
+    selectedScale = Number(button.dataset.scale);
+  });
+  function readScopeConfig() {
+    var _a, _b;
+    const attributes = Array.from(
+      document.querySelectorAll(".scope-attribute:checked")
+    ).map((el) => el.value);
+    const depthMode = (_b = (_a = document.querySelector('input[name="depth"]:checked')) == null ? void 0 : _a.value) != null ? _b : "ALL";
+    const depth = depthMode === "ALL" ? "ALL" : depthValue;
+    return { attributes, depth, excludedPageNames };
+  }
+  $("fetch-pages-btn").addEventListener("click", async () => {
+    try {
+      const { before, after } = await loadTrees();
+      renderExcludePages(before, after);
+    } catch (error) {
+      appendLog(`\u2715 \u30A8\u30E9\u30FC: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
+  function renderExcludePages(before, after) {
+    const beforeNames = new Set(before.pages.map((p) => p.name));
+    const afterNames = new Set(after.pages.map((p) => p.name));
+    const allNames = Array.from(/* @__PURE__ */ new Set([...beforeNames, ...afterNames]));
+    const list = $("exclude-pages-list");
+    list.innerHTML = "";
+    excludedPageNames = [];
+    for (const name of allNames) {
+      const label = document.createElement("label");
+      label.className = "chip";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.addEventListener("change", () => {
+        excludedPageNames = checkbox.checked ? [...excludedPageNames, name] : excludedPageNames.filter((n) => n !== name);
+      });
+      label.appendChild(checkbox);
+      label.append(name);
+      if (!beforeNames.has(name)) {
+        const flag = document.createElement("span");
+        flag.className = "flag after";
+        flag.textContent = "After\u9650\u5B9A";
+        label.appendChild(flag);
+      } else if (!afterNames.has(name)) {
+        const flag = document.createElement("span");
+        flag.className = "flag before";
+        flag.textContent = "Before\u9650\u5B9A";
+        label.appendChild(flag);
+      }
+      list.appendChild(label);
+    }
+    $("exclude-pages-fieldset").hidden = false;
+  }
+  async function loadTrees() {
+    if (!currentToken) throw new Error("\u30C8\u30FC\u30AF\u30F3\u304C\u672A\u8A2D\u5B9A\u3067\u3059");
+    const beforeUrl = $("before-url-input").value.trim();
+    const afterUrl = $("after-url-input").value.trim();
+    if (!beforeUrl || !afterUrl) throw new Error("Before / After \u306EURL\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+    if (treeCache && treeCache.beforeUrl === beforeUrl && treeCache.afterUrl === afterUrl) {
+      return treeCache;
+    }
+    const beforeVersion = $("before-version-input").value.trim() || void 0;
+    const afterVersion = $("after-version-input").value.trim() || void 0;
+    const beforeKey = parseFigmaUrl(beforeUrl).fileKey;
+    const afterKey = parseFigmaUrl(afterUrl).fileKey;
+    const [before, after] = await Promise.all([
+      fetchFileTree(currentToken, beforeKey, beforeVersion),
+      fetchFileTree(currentToken, afterKey, afterVersion)
+    ]);
+    treeCache = { beforeUrl, afterUrl, before, after };
+    return treeCache;
+  }
+  $("scan-start-btn").addEventListener("click", () => {
+    runScan().catch((error) => {
+      appendLog(`\u2715 \u30A8\u30E9\u30FC: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  });
+  $("back-to-setup-btn").addEventListener("click", () => showScreen("setup"));
+  async function runScan() {
+    var _a, _b, _c, _d, _e;
+    if (!currentToken) throw new Error("\u30C8\u30FC\u30AF\u30F3\u304C\u672A\u8A2D\u5B9A\u3067\u3059");
+    const token = currentToken;
+    const beforeUrl = $("before-url-input").value.trim();
+    const afterUrl = $("after-url-input").value.trim();
+    const beforeVersion = $("before-version-input").value.trim() || void 0;
+    const afterVersion = $("after-version-input").value.trim() || void 0;
+    const scope = readScopeConfig();
+    if (scope.attributes.length === 0) throw new Error("\u5C5E\u6027\u30921\u3064\u4EE5\u4E0A\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+    $("log-list").innerHTML = "";
+    showScreen("log");
+    appendLog("\u30B9\u30B3\u30FC\u30D7\u3092\u89E3\u6C7A\u3057\u3066\u3044\u307E\u3059\u2026");
+    const beforeKey = parseFigmaUrl(beforeUrl).fileKey;
+    const afterKey = parseFigmaUrl(afterUrl).fileKey;
+    const { before, after } = await loadTrees();
+    const beforeTargets = resolveScopeTargets(before.pages, scope);
+    const afterTargets = resolveScopeTargets(after.pages, scope);
+    const pairs = matchTargets(beforeTargets, afterTargets);
+    appendLog(`\u5BFE\u8C61\u3092\u691C\u51FA\u3057\u307E\u3057\u305F\uFF08Before ${beforeTargets.length}\u4EF6 / After ${afterTargets.length}\u4EF6 / \u5BFE\u5FDC ${pairs.length}\u4EF6\uFF09`);
+    appendLog("\u30EC\u30F3\u30C0\u30EA\u30F3\u30B0\u3092\u53D6\u5F97\u3057\u3066\u3044\u307E\u3059\u2026");
+    const beforeIds = pairs.flatMap((p) => p.before ? [p.before.nodeId] : []);
+    const afterIds = pairs.flatMap((p) => p.after ? [p.after.nodeId] : []);
+    const [beforeImages, afterImages] = await Promise.all([
+      fetchImages(
+        token,
+        beforeKey,
+        beforeIds,
+        selectedScale,
+        beforeVersion,
+        (done, total) => appendLog(`Before \u30EC\u30F3\u30C0\u30EA\u30F3\u30B0\u53D6\u5F97\u4E2D\u2026 ${done}/${total}`)
+      ),
+      fetchImages(
+        token,
+        afterKey,
+        afterIds,
+        selectedScale,
+        afterVersion,
+        (done, total) => appendLog(`After \u30EC\u30F3\u30C0\u30EA\u30F3\u30B0\u53D6\u5F97\u4E2D\u2026 ${done}/${total}`)
+      )
+    ]);
+    appendLog("\u5DEE\u5206\u3092\u7B97\u51FA\u3057\u3066\u3044\u307E\u3059\u2026");
+    const rows = [];
+    for (const pair of pairs) {
+      const beforePng = pair.before ? (_b = (_a = beforeImages.get(pair.before.nodeId)) == null ? void 0 : _a.bytes) != null ? _b : null : null;
+      const afterPng = pair.after ? (_d = (_c = afterImages.get(pair.after.nodeId)) == null ? void 0 : _c.bytes) != null ? _d : null : null;
+      let status;
+      let diffPercent = null;
+      if (pair.before && !pair.after) {
+        status = "REMOVED";
+      } else if (!pair.before && pair.after) {
+        status = "ADDED";
+      } else if (beforePng && afterPng) {
+        diffPercent = await computeDiffPercent(beforePng, afterPng);
+        status = diffPercent > DIFF_THRESHOLD_PERCENT ? "MATCHED_DIFF" : "MATCHED_SAME";
+      } else {
+        status = "MATCHED_DIFF";
+      }
+      const reference = (_e = pair.before) != null ? _e : pair.after;
+      rows.push({
+        status,
+        name: reference.name,
+        path: reference.path,
+        pageName: reference.pageName,
+        diffPercent,
+        beforePng: beforePng != null ? beforePng : null,
+        afterPng: afterPng != null ? afterPng : null
+      });
+    }
+    const diffCount = rows.filter((r) => r.status === "MATCHED_DIFF" || r.status === "REMOVED").length;
+    appendLog(`\u5224\u5B9A\u304C\u5B8C\u4E86\u3057\u307E\u3057\u305F\uFF08\u5DEE\u5206\u3042\u308A ${diffCount}\u4EF6 / \u5DEE\u5206\u306A\u3057 ${rows.length - diffCount}\u4EF6\uFF09`);
+    appendLog("\u30EC\u30DD\u30FC\u30C8\u30DA\u30FC\u30B8\u3092\u4F5C\u6210\u3057\u3066\u3044\u307E\u3059\u2026");
+    post({
+      type: "build-report",
+      meta: {
+        title: `Full Diff Checker Report \u2014 ${(/* @__PURE__ */ new Date()).toLocaleString("ja-JP")}`,
+        beforeLabel: beforeVersion ? `${beforeUrl} @ ${beforeVersion}` : beforeUrl,
+        afterLabel: afterVersion ? `${afterUrl} @ ${afterVersion}` : afterUrl,
+        thresholdPercent: DIFF_THRESHOLD_PERCENT
+      },
+      rows
+    });
+  }
+})();
+
+</script>
+</body>
+</html>
